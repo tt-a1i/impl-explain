@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unified Source Sync Manager · Implementation Report</title>
+  <script src="https://unpkg.com/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg: #faf7f2;
+  --bg-soft: #f5f0e7;
+  --bg-card: #fdfaf3;
+  --border: #e9e3d8;
+  --border-strong: #d6cdba;
+  --rule: #ede5d3;
+  --text: #1f1c17;
+  --text-soft: #4a443a;
+  --text-muted: #8a8275;
+  --text-faint: #b8b0a0;
+  --accent: #b04a1f;
+  --accent-soft: #fbeede;
+  --chosen: #4a6a2c;
+  --chosen-soft: #ecefd9;
+  --rejected: #7a2f24;
+  --rejected-soft: #f1ddd5;
+  --deferred: #8a5a17;
+  --deferred-soft: #f6ecd6;
+  --sev-high: #7a2f24;
+  --sev-medium: #8a5a17;
+  --sev-low: #a89970;
+  --mit-full: #4a6a2c;
+  --mit-partial: #8a5a17;
+  --mit-none: #b8b0a0;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--bg); scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 17px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Progress bar ===== */
+.progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  z-index: 200;
+  width: 0%;
+  transition: width 80ms linear;
+}
+
+/* ===== Sticky TOC ===== */
+.toc {
+  position: sticky;
+  top: 0;
+  background: rgba(250, 247, 242, 0.92);
+  backdrop-filter: saturate(140%) blur(10px);
+  -webkit-backdrop-filter: saturate(140%) blur(10px);
+  border-bottom: 1px solid var(--rule);
+  z-index: 50;
+}
+.toc-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 14px 32px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.toc a {
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 2px 0;
+  border-bottom: 1px solid transparent;
+  transition: color 120ms, border-color 120ms;
+}
+.toc a:hover { color: var(--text-soft); }
+.toc a.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 64px 32px 120px;
+}
+
+section { margin: 80px 0 0; scroll-margin-top: 96px; }
+
+h2.section-title {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-style: normal;
+  margin: 0 0 32px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+h2.section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+/* ===== Header / Hero ===== */
+.eyebrow {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 28px;
+}
+.eyebrow .dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  vertical-align: middle;
+  margin: 0 12px 2px;
+}
+
+h1.report-title {
+  font-family: 'Fraunces', 'Times New Roman', Georgia, serif;
+  font-weight: 600;
+  font-size: 64px;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  margin: 0 0 24px;
+}
+@media (max-width: 600px) {
+  h1.report-title { font-size: 44px; }
+  .page { padding: 48px 22px 80px; }
+}
+
+.report-subtitle {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 400;
+  font-style: italic;
+  font-size: 26px;
+  line-height: 1.4;
+  color: var(--text-soft);
+  margin: 0 0 40px;
+  max-width: 520px;
+}
+
+/* hero metrics */
+.hero-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 48px;
+  margin: 0 0 36px;
+}
+.hero-metric .label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.hero-metric .value {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text);
+  letter-spacing: -0.015em;
+}
+.hero-metric .hint {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-left: 10px;
+  vertical-align: baseline;
+}
+
+.report-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  padding-top: 32px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.report-meta .item { display: flex; align-items: baseline; gap: 12px; }
+.report-meta .item .key { color: var(--text-faint); flex-shrink: 0; min-width: 56px; }
+.report-meta .item .val { color: var(--text-soft); word-break: break-all; }
+.report-meta .commits {
+  margin: 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.report-meta .commits .item .key { color: transparent; }
+.report-meta .commits .item .val { color: var(--text-muted); }
+
+/* ===== TL;DR ===== */
+.tldr { display: grid; grid-template-columns: 1fr; gap: 28px; }
+.tldr-block {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 32px;
+  align-items: baseline;
+  padding-bottom: 24px;
+  border-bottom: 1px dashed var(--rule);
+}
+.tldr-block:last-child { border-bottom: none; padding-bottom: 0; }
+.tldr-block .label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-top: 4px;
+}
+.tldr-block .body {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 22px;
+  line-height: 1.5;
+  color: var(--text);
+  font-weight: 400;
+}
+@media (max-width: 600px) {
+  .tldr-block { grid-template-columns: 1fr; gap: 8px; }
+  .tldr-block .body { font-size: 19px; }
+}
+
+/* ===== Risk Snapshot (头部摘要, 放在 Risks section 顶部) ===== */
+.risk-snapshot {
+  margin: -8px 0 28px;
+  padding: 20px 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 24px;
+}
+.risk-highlight {
+  margin: 0 0 36px;
+  padding: 14px 20px;
+  background: rgba(122, 47, 36, 0.06);
+  border-left: 3px solid var(--sev-high);
+  border-radius: 2px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.risk-highlight .label {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sev-high);
+  font-weight: 600;
+  margin-right: 14px;
+}
+.risk-highlight.mit {
+  background: rgba(74, 106, 44, 0.06);
+  border-left-color: var(--mit-full);
+}
+.risk-highlight.mit .label { color: var(--mit-full); }
+.risk-highlight .mit-meta { color: var(--text-muted); font-size: 13px; }
+.risk-highlight .hl-note {
+  display: block;
+  margin-top: 8px;
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+/* ===== TL;DR tail: inline risk count row ===== */
+.tldr-risk-tail {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.tldr-risk-tail .label { color: var(--text-faint); }
+.tldr-risk-tail .count { color: var(--text); font-weight: 600; }
+.tldr-risk-tail .sev-high { color: var(--sev-high); font-weight: 600; }
+.tldr-risk-tail .sev-medium { color: var(--sev-medium); font-weight: 600; }
+.tldr-risk-tail .anchor {
+  margin-left: auto;
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+  padding-bottom: 1px;
+}
+.tldr-risk-tail .anchor:hover { color: var(--text); border-bottom-color: var(--text); }
+
+/* ===== Hero commits 折叠 ===== */
+.report-meta .commits {
+  margin: 4px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.report-meta .commits-collapsed { max-height: calc(3 * (1em + 6px)); overflow: hidden; position: relative; }
+.report-meta .commits-collapsed.expanded { max-height: 600px; }
+.report-meta .commits-toggle {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 6px 0 0;
+  cursor: pointer;
+}
+.report-meta .commits-toggle:hover { color: var(--text); }
+.risk-snapshot .label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.risk-snapshot .total {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 24px;
+  color: var(--text);
+}
+.risk-snapshot .total .num { font-weight: 500; }
+.risk-snapshot .total .word { color: var(--text-muted); margin-left: 6px; font-size: 14px; font-style: normal; }
+.risk-snapshot .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.risk-snapshot .pill {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+.risk-snapshot .pill.high { background: rgba(122, 47, 36, 0.12); color: var(--sev-high); }
+.risk-snapshot .pill.medium { background: rgba(138, 90, 23, 0.12); color: var(--sev-medium); }
+.risk-snapshot .pill.low { background: rgba(168, 153, 112, 0.18); color: var(--sev-low); }
+.risk-snapshot .pill .mit { opacity: 0.7; margin-left: 6px; }
+
+/* ===== Diagram ===== */
+.diagram-summary {
+  font-family: 'Inter', sans-serif;
+  font-style: normal;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--text-soft);
+  margin: 0 0 28px;
+}
+.diagram-summary .summary-label {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.diagram-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 40px 32px;
+  overflow-x: auto;
+  text-align: center;
+}
+.diagram-wrap .mermaid {
+  display: inline-block;
+  min-width: 100%;
+  font-family: 'Inter', sans-serif;
+}
+.diagram-caption {
+  margin: 16px 0 0;
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ===== Data flow ===== */
+.flow-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: stretch;
+}
+.flow-cell {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+}
+.flow-cell .mermaid {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+.flow-cell .mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+.flow-cell .flow-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+  display: block;
+}
+.flow-cell.before .flow-label { color: var(--accent); }
+.flow-cell.after .flow-label { color: var(--chosen); }
+@media (max-width: 700px) {
+  .flow-grid { grid-template-columns: 1fr; gap: 20px; }
+}
+
+/* ===== Decisions ===== */
+.decisions-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: -16px 0 32px;
+}
+.decisions { display: flex; flex-direction: column; gap: 72px; }
+.decision {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 32px;
+  position: relative;
+}
+.decision .num {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 500;
+  font-size: 56px;
+  line-height: 1;
+  color: var(--rule);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.decision.status-deferred .num { color: var(--deferred-soft); }
+.decision.status-deferred .body { opacity: 0.86; }
+.decision.status-deferred .title { color: var(--text-soft); }
+
+.decision .body { padding-top: 4px; }
+.decision .title {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 27px;
+  line-height: 1.3;
+  color: var(--text);
+  font-weight: 500;
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+.decision .question {
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+}
+
+.decision .chosen-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 0 0 16px;
+  padding: 10px 16px 10px 14px;
+  background: var(--chosen-soft);
+  border-left: 4px solid var(--chosen);
+  border-radius: 0;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.45;
+  max-width: 100%;
+}
+.decision .chosen-line .tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--chosen);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.decision.status-deferred .chosen-line {
+  background: var(--deferred-soft);
+  border-left-color: var(--deferred);
+}
+.decision.status-deferred .chosen-line .tag { color: var(--deferred); }
+
+.decision .rationale {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--text-soft);
+  margin: 4px 0 16px;
+}
+
+.decision .rejected-line {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+  line-height: 1.55;
+}
+.decision .rejected-line .rl-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-right: 12px;
+}
+.decision .rejected-line .item { margin-right: 12px; }
+
+.decision .cost {
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  border-top: 1px solid var(--rule);
+  padding-top: 12px;
+  margin-top: 8px;
+}
+.decision .cost .cost-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-right: 12px;
+  padding-right: 12px;
+  border-right: 1px solid var(--rule);
+}
+
+.decision::after {
+  content: '';
+  position: absolute;
+  bottom: -36px;
+  left: 88px;
+  width: 80px;
+  height: 1px;
+  background: var(--rule);
+}
+.decision:last-child::after { display: none; }
+
+@media (max-width: 600px) {
+  .decision { grid-template-columns: 1fr; gap: 8px; }
+  .decision .num { font-size: 40px; }
+  .decision .title { font-size: 22px; }
+  .decision::after { left: 0; }
+}
+
+/* ===== Risks ===== */
+.risks-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: -16px 0 28px;
+}
+.risk-list { display: flex; flex-direction: column; gap: 0; }
+.risk-row {
+  display: grid;
+  grid-template-columns: 76px 1fr 100px;
+  gap: 24px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--rule);
+  align-items: baseline;
+}
+.risk-row:last-child { border-bottom: none; }
+.risk-row .sev {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding-top: 2px;
+}
+.risk-row.sev-high .sev { color: var(--sev-high); }
+.risk-row.sev-medium .sev { color: var(--sev-medium); }
+.risk-row.sev-low .sev { color: var(--sev-low); }
+.risk-row .desc {
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.risk-row .desc .note {
+  display: block;
+  margin-top: 6px;
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.risk-row .mit {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding-top: 2px;
+  text-align: right;
+}
+.risk-row .mit.full { color: var(--mit-full); }
+.risk-row .mit.partial { color: var(--mit-partial); }
+.risk-row .mit.none { color: var(--mit-none); }
+@media (max-width: 600px) {
+  .risk-row { grid-template-columns: 1fr; gap: 4px; }
+  .risk-row .mit { text-align: left; }
+}
+
+/* ===== Out of scope ===== */
+.oos-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.oos-list li {
+  font-family: 'Fraunces', Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  padding-left: 28px;
+  position: relative;
+}
+.oos-list li::before {
+  content: '—';
+  position: absolute;
+  left: 0;
+  color: var(--text-faint);
+  font-style: normal;
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 16px;
+  top: 0;
+}
+
+/* ===== Footer ===== */
+footer.report-footer {
+  margin-top: 120px;
+  padding-top: 32px;
+  border-top: 1px solid var(--rule);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  text-align: center;
+}
+footer.report-footer .end-mark {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  margin: 0 14px 2px;
+  vertical-align: middle;
+}
+</style>
+</head>
+<body>
+<div class="progress-bar"></div>
+<nav class="toc" aria-label="目录">
+  <div class="toc-inner">
+    <a href="#tldr">TL;DR</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#flow">Before / After</a>
+    <a href="#decisions">Decisions</a>
+    <a href="#risks">Risks</a>
+    <a href="#oos">Out of Scope</a>
+  </div>
+</nav>
+<div class="page">
+<header class="report-header">
+  <div class="eyebrow">Implementation Report<span class="dot"></span>2026-05-11</div>
+  <h1 class="report-title">Unified Source Sync Manager</h1>
+  <p class="report-subtitle">把 RSS、Pulse/API、GDELT GKG、agent source fetcher 四类数据源收敛进一个注册表 + 一个调度器。</p>
+  <div class="hero-metrics">
+    <div class="hero-metric">
+      <div class="label">background loops 收敛</div>
+      <div class="value">47 → 1<span class="hint">per-feed → scheduler</span></div>
+    </div></div>
+  <div class="report-meta">
+    <div class="item"><span class="key">plan</span><span class="val">docs/superpowers/plans/2026-05-11-unified-source-sync-manager.md</span></div>
+    <div class="commits commits-collapsed" data-commits-count="5">
+      <div class="item"><span class="key">commits</span><span class="val">f4b0cf1 Align news taxonomy and severity levels</span></div>
+      <div class="item"><span class="key">·</span><span class="val">6edf1db Resolve backend maintainability debt</span></div>
+      <div class="item"><span class="key">·</span><span class="val">f3f0c07 Integrate two more free pulse adapters: SEC EDGAR / OpenAlex</span></div>
+      <div class="item"><span class="key">·</span><span class="val">bcc87fd Integrate three more free pulse adapters: arXiv / TheSportsDB / GLEIF LEI</span></div>
+      <div class="item"><span class="key">·</span><span class="val">08c7ab4 Integrate three free pulse adapters: World Bank / USAspending / URLhaus</span></div>
+    </div>
+    <button class="commits-toggle" type="button" aria-expanded="false">展开全部 5 commits</button>
+  </div>
+</header>
+
+<section id="tldr" data-toc>
+  <h2 class="section-title">TL;DR</h2>
+  <div class="tldr">
+    <div class="tldr-block">
+      <div class="label">做什么</div>
+      <div class="body">把 RSS、Pulse/API、GDELT GKG、agent source fetcher 四类数据源统一收敛到一个注册表 + 一个后台调度器里管。</div>
+    </div>
+    <div class="tldr-block">
+      <div class="label">怎么做</div>
+      <div class="body">新增 SourceSyncDefinition 注册表 + 派发服务 + 60s tick 调度器，挂在 FastAPI lifespan；ENABLED 开关切换灰度。</div>
+    </div>
+    <div class="tldr-block">
+      <div class="label">代价</div>
+      <div class="body">换走 47 个 per-feed loop 的复杂度，引入 1 个调度器单点故障 + 多副本部署需重启切换。</div>
+    </div>
+  </div>
+  <div class="tldr-risk-tail"><span class="label">风险预告</span><span class="count">5 risks</span><span class="sev-high">· 2 high (1 unmit)</span><span class="sev-medium">· 1 medium</span><a class="anchor" href="#risks">看详情 →</a></div>
+</section>
+
+<section id="architecture" data-toc>
+  <h2 class="section-title">Architecture</h2>
+  <p class="diagram-summary"><span class="summary-label">叙述</span>FastAPI 启动时只 spawn 一个 SourceSyncScheduler 循环；调度器每 60 秒检查注册表里 50+ 条 SourceSyncDefinition 的 cadence，到点的派给 SourceSyncService，按 kind 派发到既有 runner / adapter 完成实际拉取。</p>
+  <div class="diagram-wrap">
+    <div class="mermaid">
+flowchart LR
+    subgraph Lifespan["FastAPI Lifespan"]
+        L[lifespan.py]
+    end
+    subgraph New["Source Sync Manager (新)"]
+        D[SourceSyncDefinition<br/>Registry]
+        S[SourceSyncService]
+        SC[SourceSyncScheduler<br/>60s tick]
+    end
+    subgraph Runners["Existing Runners"]
+        R1[RssShadowRunner]
+        R2[GdeltGkgIngestRunner]
+        R3[AgentSourceFetcherRunner]
+        R4[cached_payload<br/>+ pulse adapters]
+    end
+    L -->|spawn once| SC
+    SC -->|tick due| S
+    S -->|read kind/cadence| D
+    S -->|rss_batch| R1
+    S -->|gdelt_gkg| R2
+    S -->|agent_source_fetcher_batch| R3
+    S -->|pulse_api| R4
+    classDef newcomp fill:#fbeede,stroke:#b04a1f,color:#1f1c17,stroke-width:1.5px
+    class D,S,SC newcomp
+    </div>
+  </div>
+  <p class="diagram-caption">橙色块 = 本次新增；箭头标签 = dispatch kind。</p>
+</section>
+
+<section id="flow" data-toc>
+  <h2 class="section-title">Before / After</h2>
+  <div class="flow-grid">
+    <div class="flow-cell before">
+      <span class="flow-label">Before</span>
+      <div class="mermaid">
+flowchart TB
+    L[lifespan.py]
+    L -->|spawn| L1[rss_shadow_loop]
+    L -->|spawn| L2[gdelt_gkg_loop]
+    L -->|spawn| L3[backend_pipeline_loop]
+    L -->|spawn ×47| L4[pulse per-feed loops]
+    L1 --> DB[(DB)]
+    L2 --> DB
+    L3 --> DB
+    L4 --> DB
+      </div>
+    </div>
+    <div class="flow-cell after">
+      <span class="flow-label">After</span>
+      <div class="mermaid">
+flowchart TB
+    L[lifespan.py]
+    L -->|spawn 1| SC[SourceSyncScheduler]
+    SC -->|tick due| S[SourceSyncService]
+    S -->|registry lookup| D[SourceSyncDefinition]
+    S -->|dispatch by kind| W[(unified writers)]
+    W --> DB[(DB)]
+    classDef newcomp fill:#fbeede,stroke:#b04a1f,color:#1f1c17,stroke-width:1.5px
+    class SC,S,D newcomp
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="decisions" data-toc>
+  <h2 class="section-title">Decisions</h2>
+  <div class="decisions-meta">6 decisions · 5 chosen · 1 deferred</div>
+  <div class="decisions">
+<article class="decision status-chosen">
+  <div class="num">01</div>
+  <div class="body">
+    <h3 class="title">集中注册表放 cadence</h3>
+    <div class="chosen-line">
+      <span class="tag">采用</span>
+      <span class="text">单一 SourceSyncDefinition 注册表，新增 source 只改一处</span>
+    </div>
+    <p class="rationale">47+ 数据源后 &quot;新增一个去哪里加&quot; 是 grep 八处的痛点。注册表 = 所有 source 强制 declare 一致字段（kind / cadence / pulse_definition）。</p>
+    <p class="rejected-line"><span class="rl-label">放弃</span><span class="item">每个 runner 内部各自声明 cadence</span> · <span class="item">config.py 里 47 个独立常量</span></p>
+    <p class="cost"><span class="cost-label">代价</span>多一层抽象；新增 source kind 时需要在 SourceSyncService._run_definition 加分支。</p>
+  </div>
+</article>
+<article class="decision status-chosen">
+  <div class="num">02</div>
+  <div class="body">
+    <h3 class="title">灰度时禁用 legacy loop</h3>
+    <div class="chosen-line">
+      <span class="tag">采用</span>
+      <span class="text">SOURCE_SYNC_ENABLED=true 时抑制旧 RSS/GDELT/pipeline loop，重启切换</span>
+    </div>
+    <p class="rationale">并存 = 双写 DB 造成 published article 重复（projection / snapshot 表都会污染）；直接删除没法 fallback；开关切换 + 重启是工程上最稳的灰度路径。</p>
+    <p class="rejected-line"><span class="rl-label">放弃</span><span class="item">新旧并存（让旧 loop 也跑）</span> · <span class="item">直接删除旧 loop</span></p>
+    <p class="cost"><span class="cost-label">代价</span>SOURCE_SYNC_ENABLED=false 时还在跑 legacy；切换必须重启服务。</p>
+  </div>
+</article>
+<article class="decision status-chosen">
+  <div class="num">03</div>
+  <div class="body">
+    <h3 class="title">Profile 字符串映射 include set</h3>
+    <div class="chosen-line">
+      <span class="tag">采用</span>
+      <span class="text">字符串 profile（content / pulse / rss-only / gdelt 等）→ include set</span>
+    </div>
+    <p class="rationale">部署场景固定的几种组合（pulse-only debug、rss-only 灰度、full prod），profile 一行配置即可。完整 list 配置噪声大且易写错。</p>
+    <p class="rejected-line"><span class="rl-label">放弃</span><span class="item">让用户传完整 include list</span> · <span class="item">硬编码全部跑</span></p>
+    <p class="cost"><span class="cost-label">代价</span>加新 profile 要改 source_sync_profile_include 代码；profile 写错时静默落到 default。</p>
+  </div>
+</article>
+<article class="decision status-chosen">
+  <div class="num">04</div>
+  <div class="body">
+    <h3 class="title">单全局 semaphore 控并发</h3>
+    <div class="chosen-line">
+      <span class="tag">采用</span>
+      <span class="text">asyncio.Semaphore，cap = source_sync_max_concurrency（默认 4）</span>
+    </div>
+    <p class="rationale">47 pulse 同时打会触上游 rate limit；多 semaphore 工程复杂度上升收益不明显；先用单 semaphore 看效果。</p>
+    <p class="rejected-line"><span class="rl-label">放弃</span><span class="item">每个 kind 独立 semaphore</span> · <span class="item">完全不限制并发</span></p>
+    <p class="cost"><span class="cost-label">代价</span>慢 source 会占着信号量阻塞快的；future 可改 per-kind 队列。</p>
+  </div>
+</article>
+<article class="decision status-chosen">
+  <div class="num">05</div>
+  <div class="body">
+    <h3 class="title">60s tick + cadence 检查</h3>
+    <div class="chosen-line">
+      <span class="tag">采用</span>
+      <span class="text">Scheduler 60 秒 tick，每 tick 算哪些 definition due</span>
+    </div>
+    <p class="rationale">cadence 多样（15min ~ 24h），tick 实现极简；60s 精度对所有现有 cadence 足够；事件驱动需要额外队列基础设施。</p>
+    <p class="rejected-line"><span class="rl-label">放弃</span><span class="item">事件驱动（来一个 trigger 跑一个）</span> · <span class="item">全部固定 cron 表达式</span></p>
+    <p class="cost"><span class="cost-label">代价</span>单次 tick 内最大 60s cadence drift（业务可接受）。</p>
+  </div>
+</article>
+<article class="decision status-deferred">
+  <div class="num">06</div>
+  <div class="body">
+    <h3 class="title">失败本轮跳过, 下轮再来</h3>
+    <div class="chosen-line">
+      <span class="tag">推迟</span>
+      <span class="text">捕获并 log.warning，本轮记 status=failed，下一轮 tick 再来</span>
+    </div>
+    <p class="rationale">实施期暂未观测到 transient 失败热点；多数 source 自身有 cache 机制；retry 需要复杂的失败计数和 backoff 状态机。</p>
+    <p class="rejected-line"><span class="rl-label">放弃</span><span class="item">立即 retry with backoff</span> · <span class="item">失败后 disable definition</span></p>
+    <p class="cost"><span class="cost-label">代价</span>短暂故障期会持续 log.warning 噪声；future 可加 circuit breaker。</p>
+  </div>
+</article>
+  </div>
+</section>
+
+<section id="risks" data-toc>
+  <h2 class="section-title">Risks</h2>
+  
+<aside class="risk-snapshot" aria-label="风险概览">
+  <span class="label">概览</span>
+  <span class="total"><span class="num">5</span><span class="word">risks</span></span>
+  <span class="pills"><span class="pill high">2 high <span class="mit">(1/2 mit)</span></span><span class="pill medium">1 medium <span class="mit">(0 mit)</span></span><span class="pill low">2 low <span class="mit">(1/2 mit)</span></span></span>
+</aside>
+
+<p class="risk-highlight ">
+  <span class="label">Top risk</span>Scheduler 单进程跑，多副本部署会同时跑造成 DB 写冲突 <span class="mit-meta">— 待观察</span> <span class="hl-note">多副本场景下两个调度器会争抢同一 SourceSyncDefinition，触发 INSERT 主键冲突；需要 leader election 才能上 K8s rollingUpdate，暂未做</span>
+</p>
+
+  <div class="risk-list">
+    <div class="risk-row sev-high">
+      <div class="sev">high</div>
+      <div class="desc">SOURCE_SYNC_ENABLED 灰度切换期间旧 loop 和新 service 短暂并存导致双写<span class="note">切换文档要求重启服务；lifespan 内 SOURCE_SYNC_ENABLED 判断保证不会同时挂载两套</span></div>
+      <div class="mit full">已缓解</div>
+    </div>
+    <div class="risk-row sev-medium">
+      <div class="sev">medium</div>
+      <div class="desc">47 pulse + 3 runner 同时跑时 max_concurrency 默认 4 可能太小，造成排队延迟<span class="note">尚未观测；上线后看 SourceSyncResult 时间分布再调</span></div>
+      <div class="mit none">待观察</div>
+    </div>
+    <div class="risk-row sev-low">
+      <div class="sev">low</div>
+      <div class="desc">source_sync_profile 写错（大小写、typo）会静默落到 default profile<span class="note">future 加启动时 strict 校验 + 已知 profile 白名单</span></div>
+      <div class="mit none">待观察</div>
+    </div>
+    <div class="risk-row sev-low">
+      <div class="sev">low</div>
+      <div class="desc">单 source 失败被 _run_definition 吞掉，只记 logger.warning，没告警机制<span class="note">SourceSyncResult.status=failed 已沉淀到 report；future 接 Prometheus / Sentry</span></div>
+      <div class="mit partial">部分缓解</div>
+    </div>
+    <div class="risk-row sev-high">
+      <div class="sev">high</div>
+      <div class="desc">Scheduler 单进程跑，多副本部署会同时跑造成 DB 写冲突<span class="note">多副本场景下两个调度器会争抢同一 SourceSyncDefinition，触发 INSERT 主键冲突；需要 leader election 才能上 K8s rollingUpdate，暂未做</span></div>
+      <div class="mit none">待观察</div>
+    </div>
+  </div>
+</section>
+
+<section id="oos">
+  <h2 class="section-title">Out of Scope</h2>
+  <ul class="oos-list">
+    <li>跨进程协调 / leader election（多副本会重复跑）</li>
+    <li>动态新增 source（必须重启服务才生效）</li>
+    <li>失败重试策略（无 backoff，下一 tick 再来）</li>
+    <li>Prometheus / Sentry 监控告警接入</li>
+  </ul>
+</section>
+
+<footer class="report-footer">
+  Generated by impl-explain<span class="end-mark"></span>End of report
+</footer>
+</div>
+  <script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    background: '#fdfaf3',
+    primaryColor: '#fbeede',
+    primaryTextColor: '#1f1c17',
+    primaryBorderColor: '#b04a1f',
+    lineColor: '#a89685',
+    secondaryColor: '#ffffff',
+    tertiaryColor: '#f5f0e7',
+    fontFamily: 'Inter, -apple-system, sans-serif',
+    fontSize: '14px',
+    nodeBorder: '#d6cdba',
+    clusterBkg: '#f5f0e7',
+    clusterBorder: '#e9e3d8',
+    edgeLabelBackground: '#fdfaf3',
+    titleColor: '#1f1c17'
+  },
+  flowchart: { curve: 'basis', padding: 12, htmlLabels: true },
+  sequence: { actorMargin: 60, messageMargin: 40 }
+});
+
+// Progress bar
+(function () {
+  var bar = document.querySelector('.progress-bar');
+  if (!bar) return;
+  function update() {
+    var max = document.documentElement.scrollHeight - window.innerHeight;
+    var pct = max > 0 ? (window.scrollY / max) * 100 : 0;
+    bar.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', update, { passive: true });
+  window.addEventListener('resize', update);
+  update();
+})();
+
+// TOC active section
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a[href^="#"]'));
+  if (!links.length) return;
+  var sectionMap = {};
+  links.forEach(function (a) {
+    var id = a.getAttribute('href').slice(1);
+    var el = document.getElementById(id);
+    if (el) sectionMap[id] = a;
+  });
+  // 初始 active: 第一个 link (TL;DR)
+  if (links[0]) links[0].classList.add('active');
+
+  var observer = new IntersectionObserver(function (entries) {
+    // 收集当前在可视区的所有 section，按 doc order 取第一个作为 active
+    var visible = [];
+    entries.forEach(function (e) {
+      if (e.isIntersecting) visible.push(e.target);
+    });
+    if (!visible.length) return;
+    // 取 boundingClientRect.top 最小（最先进入视野）的
+    visible.sort(function (a, b) { return a.getBoundingClientRect().top - b.getBoundingClientRect().top; });
+    var id = visible[0].id;
+    links.forEach(function (a) { a.classList.remove('active'); });
+    var link = sectionMap[id];
+    if (link) link.classList.add('active');
+  }, { rootMargin: '-15% 0px -70% 0px', threshold: 0 });
+  Object.keys(sectionMap).forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) observer.observe(el);
+  });
+})();
+
+// Commits 折叠展开
+(function () {
+  var toggle = document.querySelector('.commits-toggle');
+  if (!toggle) return;
+  var commits = document.querySelector('.commits-collapsed');
+  if (!commits) return;
+  toggle.addEventListener('click', function () {
+    var expanded = commits.classList.toggle('expanded');
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    var count = commits.getAttribute('data-commits-count');
+    toggle.textContent = expanded ? '折叠 commits' : ('展开全部 ' + count + ' commits');
+  });
+})();
+</script>
+</body>
+</html>
