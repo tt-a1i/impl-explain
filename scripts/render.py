@@ -30,9 +30,12 @@ class SchemaError(Exception):
         super().__init__(msg)
 
 
-# mermaid 启发式：首行需以关键字开头（允许 %%{init: ...}%% 前缀）
+# mermaid 启发式：首行需以关键字开头（允许 %%{init: ...}%% 前缀，含嵌套花括号）
 _MERMAID_RE = re.compile(
-    r"^\s*(%%\{[^}]*\}%%\s*)*(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie|journey|gitGraph|mindmap|timeline|requirement|C4Context|C4Container)\b",
+    r"^\s*(?:%%\{[\s\S]*?\}%%\s*)*"  # 任意个 init 块前缀, 允许嵌套花括号
+    r"\b(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|"
+    r"erDiagram|gantt|pie|journey|gitGraph|mindmap|timeline|"
+    r"requirement|C4Context|C4Container)\b",
     re.IGNORECASE,
 )
 
@@ -192,7 +195,19 @@ def esc(s: str) -> str:
 
 
 def mermaid_text(s: str) -> str:
-    return s.replace("</div>", "&lt;/div&gt;").replace("<script", "&lt;script")
+    """Escape mermaid source for safe insertion into a data attribute.
+
+    Mermaid source comes from LLM-generated JSON, so any HTML-looking content
+    (e.g. node labels containing ``<img src=x onerror=...>``) is a potential
+    injection vector. We escape everything via ``html.escape`` and store the
+    result in ``data-content`` on the container. A small JS shim then copies
+    ``el.dataset.content`` to ``el.textContent`` (NOT innerHTML) before
+    ``mermaid.initialize`` runs, so the mermaid library reads inert text.
+
+    Combined with ``htmlLabels: false`` in the mermaid theme config, node
+    labels render as SVG ``<text>`` elements with no HTML interpretation.
+    """
+    return html.escape(s, quote=True)
 
 
 def _resolve_mitigation(r: dict[str, Any]) -> tuple[str, str]:
@@ -935,6 +950,15 @@ footer.report-footer .end-mark {
 
 
 JS = r"""
+// 安全前导：把 data-content 复制到 textContent 后再交给 mermaid 渲染。
+// 见 scripts/render.py::mermaid_text 注释。
+(function () {
+  document.querySelectorAll('.mermaid[data-content]').forEach(function (el) {
+    el.textContent = el.dataset.content;
+    el.removeAttribute('data-content');
+  });
+})();
+
 mermaid.initialize({
   startOnLoad: true,
   theme: 'base',
@@ -954,7 +978,10 @@ mermaid.initialize({
     edgeLabelBackground: '#fdfaf3',
     titleColor: '#1f1c17'
   },
-  flowchart: { curve: 'basis', padding: 12, htmlLabels: true },
+  // htmlLabels:false 强制 mermaid 把 node label 渲染成 SVG <text>，
+  // 屏蔽 LLM 生成 label 内 <img src=x onerror=...> 这类 HTML 注入面。
+  // 配合 mermaid_text() 的 html.escape 形成双层防护。
+  flowchart: { curve: 'basis', padding: 12, htmlLabels: false },
   sequence: { actorMargin: 60, messageMargin: 40 }
 });
 
@@ -1231,9 +1258,7 @@ def render_architecture(arch: dict[str, str] | None) -> str:
   <h2 class="section-title">Architecture</h2>
   {summary_html}
   <div class="diagram-wrap">
-    <div class="mermaid">
-{mermaid_text(arch["diagram"])}
-    </div>
+    <div class="mermaid" data-content="{mermaid_text(arch["diagram"])}"></div>
   </div>
   {caption_html}
 </section>
@@ -1249,15 +1274,11 @@ def render_data_flow(flow: dict[str, str] | None) -> str:
   <div class="flow-grid">
     <div class="flow-cell before">
       <span class="flow-label">Before</span>
-      <div class="mermaid">
-{mermaid_text(flow["before"])}
-      </div>
+      <div class="mermaid" data-content="{mermaid_text(flow["before"])}"></div>
     </div>
     <div class="flow-cell after">
       <span class="flow-label">After</span>
-      <div class="mermaid">
-{mermaid_text(flow["after"])}
-      </div>
+      <div class="mermaid" data-content="{mermaid_text(flow["after"])}"></div>
     </div>
   </div>
 </section>
@@ -1440,7 +1461,24 @@ def main(argv: list[str] | None = None) -> int:
     html_text = render_html(validated)
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(html_text, encoding="utf-8")
+    # 原子写入：先写临时文件，再 os.replace 替换目标，避免中断 / 磁盘满 / 异常时
+    # 留下半成品 HTML 让浏览器读到坏内容。
+    import os
+    import tempfile
+
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=out_path.name + ".",
+        suffix=".tmp",
+        dir=str(out_path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(html_text)
+        os.replace(tmp_path, out_path)
+    except Exception:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+
     print(f"✓ 报告已生成: {out_path.resolve()}")
     return 0
 

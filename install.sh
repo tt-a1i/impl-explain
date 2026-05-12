@@ -300,14 +300,22 @@ install_skill_dir "$CODEX_DIR" "Codex (~/.codex/.agents/skills/$SKILL_NAME)"
 # 4.5) Manifest 文件（让 skill 在用户没装到任何标准位置 / 在 dev clone 仓库下跑也能找到 render.py）
 log_step "写入 manifest ($MANIFEST_FILE)"
 mkdir -p "$MANIFEST_DIR"
-cat > "$MANIFEST_FILE" <<EOF
-{
-  "skill_dir": "$SOURCE_DIR",
-  "primary_dir": "$PRIMARY_DIR",
-  "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "mode": "$([[ $USE_LINK -eq 1 ]] && echo symlink || echo copy)"
+# 用 Python json.dumps 安全转义路径里的引号 / 反斜杠 / 换行——直接 heredoc 拼字符串
+# 会被路径里的特殊字符破坏 manifest 文件。
+MODE=$([[ $USE_LINK -eq 1 ]] && echo symlink || echo copy)
+INSTALLED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+python3 -c "
+import json, sys
+manifest = {
+    'skill_dir': sys.argv[1],
+    'primary_dir': sys.argv[2],
+    'installed_at': sys.argv[3],
+    'mode': sys.argv[4],
 }
-EOF
+with open(sys.argv[5], 'w', encoding='utf-8') as f:
+    json.dump(manifest, f, indent=2, ensure_ascii=False)
+    f.write('\n')
+" "$SOURCE_DIR" "$PRIMARY_DIR" "$INSTALLED_AT" "$MODE" "$MANIFEST_FILE"
 log_ok "manifest 写入 $MANIFEST_FILE"
 
 # 5) Slash wrappers

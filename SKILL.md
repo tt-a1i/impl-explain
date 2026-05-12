@@ -28,7 +28,11 @@ description: 在用户已经完成一次 implementation 工作后，把项目里
 
 **默认查找路径**（按优先级）：
 
-1. 用户在请求里指定了 plan 路径——用那个
+1. 用户在请求里指定了 plan 路径——用那个，**但必须做以下安全校验**：
+   - 路径必须位于 `git rev-parse --show-toplevel` 计算出的项目根之内（防止误读或 prompt injection 诱导读 `.env` / SSH 配置 / 其他仓库文件）
+   - 路径不得指向以 `.env*`、`*.pem`、`*.key`、`id_rsa*`、`credentials*` 等敏感模式结尾的文件
+   - 路径不得包含 `..` 段（防止符号链接 / 路径穿越）
+   - 任一校验失败：停下来告诉用户 "plan 路径 X 不在当前 git root 内（或匹配敏感模式），出于安全考虑拒绝读取"
 2. `docs/superpowers/plans/` 下日期最新的 `.md`
 3. `docs/plans/` 下日期最新的 `.md`
 4. 项目根目录下符合 `*plan*.md` 模式的最新文件
@@ -153,7 +157,7 @@ JSON 里输出的是 `meta.commits: list[str]`，每条形如 `"abc1234 commit s
 
 - **TL;DR 三句必须 30 秒讲完**。不要堆 CamelCase / 不要复述 plan 标题。
 - **TL;DR.tradeoff 写整体账，不写局部账**。"换走 X 复杂度，引入 Y 风险" 这种宏观陈述，**不要**复述任何一条 Decision 的 cost。
-- **决策的 `title` 是结论式短句**，不是带问号的提问。把"做了什么决定"放在 title，原问题留给可选的 `question` 字段做副标题。
+- **决策的 `title` 是结论式短句**，不是带问号的提问。把"做了什么决定"放在 title 即可，**不要**再填 `question` 字段（已废弃）。
 - **架构图至少 5 个节点**。展示新组件与既有系统的关系。新组件高亮用 `classDef newcomp fill:#fbeede,stroke:#b04a1f,color:#1f1c17,stroke-width:1.5px` + `class A,B,C newcomp`——**不要**写 `style X fill:#暗色` 这种暗黑色值，会跟浅色主题打架。
 - **out_of_scope 要具体**。"未来可能优化" 太空泛；写 "暂未做 leader election" 这种具体项。
 - **`metrics` 没填的话，render.py 会自动派生**（决策数 + 风险数）。如果你想显式定义（如 "源类型收敛 4→1"），就填进去。

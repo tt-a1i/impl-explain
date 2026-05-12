@@ -772,32 +772,30 @@ footer.report-footer .end-mark {
   <h2 class="section-title">Architecture</h2>
   <p class="diagram-summary"><span class="summary-label">叙述</span>FastAPI 启动时只 spawn 一个 SourceSyncScheduler 循环；调度器每 60 秒检查注册表里 50+ 条 SourceSyncDefinition 的 cadence，到点的派给 SourceSyncService，按 kind 派发到既有 runner / adapter 完成实际拉取。</p>
   <div class="diagram-wrap">
-    <div class="mermaid">
-flowchart LR
-    subgraph Lifespan["FastAPI Lifespan"]
+    <div class="mermaid" data-content="flowchart LR
+    subgraph Lifespan[&quot;FastAPI Lifespan&quot;]
         L[lifespan.py]
     end
-    subgraph New["Source Sync Manager (新)"]
-        D[SourceSyncDefinition<br/>Registry]
+    subgraph New[&quot;Source Sync Manager (新)&quot;]
+        D[SourceSyncDefinition Registry]
         S[SourceSyncService]
-        SC[SourceSyncScheduler<br/>60s tick]
+        SC[SourceSyncScheduler 60s tick]
     end
-    subgraph Runners["Existing Runners"]
+    subgraph Runners[&quot;Existing Runners&quot;]
         R1[RssShadowRunner]
         R2[GdeltGkgIngestRunner]
         R3[AgentSourceFetcherRunner]
-        R4[cached_payload<br/>+ pulse adapters]
+        R4[cached_payload + pulse adapters]
     end
-    L -->|spawn once| SC
-    SC -->|tick due| S
-    S -->|read kind/cadence| D
-    S -->|rss_batch| R1
-    S -->|gdelt_gkg| R2
-    S -->|agent_source_fetcher_batch| R3
-    S -->|pulse_api| R4
+    L --&gt;|spawn once| SC
+    SC --&gt;|tick due| S
+    S --&gt;|read kind/cadence| D
+    S --&gt;|rss_batch| R1
+    S --&gt;|gdelt_gkg| R2
+    S --&gt;|agent_source_fetcher_batch| R3
+    S --&gt;|pulse_api| R4
     classDef newcomp fill:#fbeede,stroke:#b04a1f,color:#1f1c17,stroke-width:1.5px
-    class D,S,SC newcomp
-    </div>
+    class D,S,SC newcomp"></div>
   </div>
   <p class="diagram-caption">橙色块 = 本次新增；箭头标签 = dispatch kind。</p>
 </section>
@@ -807,32 +805,28 @@ flowchart LR
   <div class="flow-grid">
     <div class="flow-cell before">
       <span class="flow-label">Before</span>
-      <div class="mermaid">
-flowchart TB
+      <div class="mermaid" data-content="flowchart TB
     L[lifespan.py]
-    L -->|spawn| L1[rss_shadow_loop]
-    L -->|spawn| L2[gdelt_gkg_loop]
-    L -->|spawn| L3[backend_pipeline_loop]
-    L -->|spawn ×47| L4[pulse per-feed loops]
-    L1 --> DB[(DB)]
-    L2 --> DB
-    L3 --> DB
-    L4 --> DB
-      </div>
+    L --&gt;|spawn| L1[rss_shadow_loop]
+    L --&gt;|spawn| L2[gdelt_gkg_loop]
+    L --&gt;|spawn| L3[backend_pipeline_loop]
+    L --&gt;|spawn ×47| L4[pulse per-feed loops]
+    L1 --&gt; DB[(DB)]
+    L2 --&gt; DB
+    L3 --&gt; DB
+    L4 --&gt; DB"></div>
     </div>
     <div class="flow-cell after">
       <span class="flow-label">After</span>
-      <div class="mermaid">
-flowchart TB
+      <div class="mermaid" data-content="flowchart TB
     L[lifespan.py]
-    L -->|spawn 1| SC[SourceSyncScheduler]
-    SC -->|tick due| S[SourceSyncService]
-    S -->|registry lookup| D[SourceSyncDefinition]
-    S -->|dispatch by kind| W[(unified writers)]
-    W --> DB[(DB)]
+    L --&gt;|spawn 1| SC[SourceSyncScheduler]
+    SC --&gt;|tick due| S[SourceSyncService]
+    S --&gt;|registry lookup| D[SourceSyncDefinition]
+    S --&gt;|dispatch by kind| W[(unified writers)]
+    W --&gt; DB[(DB)]
     classDef newcomp fill:#fbeede,stroke:#b04a1f,color:#1f1c17,stroke-width:1.5px
-    class SC,S,D newcomp
-      </div>
+    class SC,S,D newcomp"></div>
     </div>
   </div>
 </section>
@@ -979,6 +973,15 @@ flowchart TB
 </footer>
 </div>
   <script>
+// 安全前导：把 data-content 复制到 textContent 后再交给 mermaid 渲染。
+// 见 scripts/render.py::mermaid_text 注释。
+(function () {
+  document.querySelectorAll('.mermaid[data-content]').forEach(function (el) {
+    el.textContent = el.dataset.content;
+    el.removeAttribute('data-content');
+  });
+})();
+
 mermaid.initialize({
   startOnLoad: true,
   theme: 'base',
@@ -998,7 +1001,10 @@ mermaid.initialize({
     edgeLabelBackground: '#fdfaf3',
     titleColor: '#1f1c17'
   },
-  flowchart: { curve: 'basis', padding: 12, htmlLabels: true },
+  // htmlLabels:false 强制 mermaid 把 node label 渲染成 SVG <text>，
+  // 屏蔽 LLM 生成 label 内 <img src=x onerror=...> 这类 HTML 注入面。
+  // 配合 mermaid_text() 的 html.escape 形成双层防护。
+  flowchart: { curve: 'basis', padding: 12, htmlLabels: false },
   sequence: { actorMargin: 60, messageMargin: 40 }
 });
 
