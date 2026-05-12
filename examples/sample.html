@@ -974,7 +974,8 @@ footer.report-footer .end-mark {
 </div>
   <script>
 // 安全前导：把 data-content 复制到 textContent 后再交给 mermaid 渲染。
-// 见 scripts/render.py::mermaid_text 注释。
+// data-content 里的 mermaid 源是 HTML-escaped 的, 防止 LLM 生成的恶意标签
+// 在 mermaid 库加载前被浏览器解释。配合 htmlLabels:false 双层防护。
 (function () {
   document.querySelectorAll('.mermaid[data-content]').forEach(function (el) {
     el.textContent = el.dataset.content;

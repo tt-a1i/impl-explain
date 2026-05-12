@@ -19,7 +19,7 @@ argument-hint: [可选 plan 路径]
 
    第一个存在的即用。如果都找不到，告诉用户先跑 `./install.sh` 安装 skill。
 
-2. 加载该 SKILL.md 的内容，按其中的"执行步骤"1-6 步逐步执行。
+2. 加载该 SKILL.md 的内容，按其中的"执行步骤"4 步（找 plan / 收集 git / 写 HTML / 报告路径）逐步执行。同目录下 `examples/sample.html` 是视觉参考——抄它的 CSS / 字体 / 配色，不要自创风格。
 
 3. 用户参数：`$ARGUMENTS`（如果非空，作为 plan 文件路径优先使用；如果为空，按 SKILL.md 步骤 1 自动定位）。
 

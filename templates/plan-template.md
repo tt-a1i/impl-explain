@@ -1,20 +1,20 @@
 # <项目/Feature 名称> Implementation Plan
 
-> 本模板与 `impl-explain` skill 配套。按这个结构写 plan，agent 跑 `/impl-explain` 时几乎不需要推断，能直接把段落字面映射到 HTML 报告的对应 section。
+> 本模板与 `impl-explain` skill 配套。按这个结构写 plan，agent 跑 `/impl-explain` 时几乎不需要推断，能直接把段落字面对应到 HTML 报告对应 section。
 >
 > 模板各段对应 HTML 报告段落：
 >
 > | 模板段 | 报告段 |
 > | --- | --- |
-> | TL;DR | TL;DR 三行 |
-> | Architecture | Architecture 图（含可选 summary / caption） |
+> | TL;DR | TL;DR 三行 + 尾部风险预告 |
+> | Metrics (可选) | Hero metric chip |
+> | Architecture | Architecture 图 + 上方叙述 + 下方 caption |
 > | Data Flow | Before / After |
 > | Decisions | Decisions 卡片 |
-> | Risks | Risks 列表 + 风险概览 |
+> | Risks | Risks 列表 + 顶部 snapshot + Top risk inline |
 > | Out of Scope | Out of Scope 列表 |
-> | Metrics (可选) | Hero metrics 三连 |
 >
-> 如果某段没有内容，**直接删掉**，不要留 placeholder。
+> 如果某段没有内容，**直接删掉**，不要留 placeholder。agent 也会跳过对应 section。
 
 **日期**: YYYY-MM-DD
 **作者**: <name>
@@ -32,17 +32,15 @@
 
 ## Metrics (可选)
 
-如果本次实施有强烈的"量级感"数字（如 "47→1 loops"、"4 sources unified"、"6 决策"），列在这里，agent 会渲染为 Hero metric chips：
+如果本次实施有强烈的"量级感"数字（如 "47→1 loops"、"4 sources unified"），写一两个最有冲击力的列在这里，agent 会渲染为 Hero metric chip：
 
-- **决策**: 6
-- **风险**: 5（1 high）
-- **源类型收敛**: 4→1
+- **background loops 收敛**: 47 → 1
 
-不写也行，render 会自动派生 `决策数 / 风险数`。
+不写就不写——不要堆"6 decisions / 5 risks"这种 chip（那是 section meta 的事，不是 hero 应该展示的）。
 
 ## Architecture
 
-可选的 **2-3 句话叙述**，描述高层架构意图（agent 会把它放在图上方，作为 `architecture_diagram.summary`）。
+可选的 **2-3 句话叙述**，描述高层架构意图（agent 会把它放在图上方）。
 
 然后是 mermaid 源码：
 
@@ -86,7 +84,6 @@ flowchart LR
 
 ### Decision 1: <结论式短标题, 比如 "集中注册表放 cadence">
 
-- **Question** (可选): <原问题, 比如 "数据源 cadence 信息放哪？"——作为标题副文字>
 - **Chosen**: 最终选择, 一两句话
 - **Rejected**:
   - 备选 1
@@ -95,7 +92,7 @@ flowchart LR
 - **Cost**: 本条决策的**局部代价**（不复述 TL;DR 的整体账）
 - **Status**: `chosen` 或 `deferred`
 
-> ⚠️ `status` 只有这两种取值。**`rejected` 已废弃**——如果一个决策的所有备选都被否决，那它应该放进 `Out of Scope`，不是 Decisions。
+> ⚠️ `status` 只有这两种取值。**没有 `rejected`**——如果一个决策的所有备选都被否决，那它应该放进 `Out of Scope`，不是 Decisions。
 
 ### Decision 2: ...
 
@@ -144,7 +141,6 @@ flowchart LR
 
 > ### Decision: 缓存层选 Redis 而非 in-memory dict
 >
-> - Question: 缓存层选 Redis 还是 in-memory dict?
 > - Chosen: Redis
 > - Rejected: in-memory dict / Memcached
 > - Rationale: 多副本部署时 in-memory 各副本数据不一致; Memcached 没有原子 incr 适合做计数器但本场景需要 hash 操作
